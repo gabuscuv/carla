@@ -51,14 +51,14 @@ fi
 
 source $(dirname "$0")/Environment.sh
 
-command -v /usr/bin/clang++-$CARLA_LLVM_VERSION_MAJOR >/dev/null 2>&1 || {
+command -v clang++-$CARLA_LLVM_VERSION_MAJOR >/dev/null 2>&1 || {
   echo >&2 "clang-$CARLA_LLVM_VERSION_MAJOR is required, but it's not installed.";
   exit 1;
 }
 
 CXX_TAG=c$CARLA_LLVM_VERSION_MAJOR
-export CC=/usr/bin/clang-$CARLA_LLVM_VERSION_MAJOR
-export CXX=/usr/bin/clang++-$CARLA_LLVM_VERSION_MAJOR
+export CC=`command -v clang-$CARLA_LLVM_VERSION_MAJOR`
+export CXX=`command -v clang++-$CARLA_LLVM_VERSION_MAJOR`
 
 # Convert comma-separated string to array of unique elements.
 IFS="," read -r -a PY_VERSION_LIST <<< "${PY_VERSION_LIST}"
