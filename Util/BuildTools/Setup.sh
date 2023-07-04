@@ -15,6 +15,7 @@ eval set -- "$OPTS"
 PY_VERSION_LIST=3
 USE_CHRONO=false
 USE_PYTORCH=false
+FORCE_DOWNLOAD=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -23,6 +24,9 @@ while [[ $# -gt 0 ]]; do
       shift 2 ;;
     --chrono )
       USE_CHRONO=true;
+      shift ;;
+    --force-download )
+      FORCE_DOWNLOAD=true;
       shift ;;
     --pytorch )
       USE_PYTORCH=true;
@@ -85,14 +89,18 @@ for PY_VERSION in ${PY_VERSION_LIST[@]} ; do
 
     BOOST_PACKAGE_BASENAME=boost_${BOOST_VERSION//./_}
 
-    log "Retrieving boost."
-    wget "https://boostorg.jfrog.io/artifactory/main/release/${BOOST_VERSION}/source/${BOOST_PACKAGE_BASENAME}.tar.gz" || true
-    # try to use the backup boost we have in Jenkins
-    if [[ ! -f "${BOOST_PACKAGE_BASENAME}.tar.gz" ]] ; then
-      log "Using boost backup"
-      wget "https://carla-releases.s3.eu-west-3.amazonaws.com/Backup/${BOOST_PACKAGE_BASENAME}.tar.gz" || true
+    ## Don't Re-download a already existent file or put a flag for force download
+    if [ ! -f $PWD/${BOOST_PACKAGE_BASENAME}.tar.gz ] || [ $FORCE_DOWNLOAD == "true" ] ;then
+      log "Retrieving boost."
+      wget "https://boostorg.jfrog.io/artifactory/main/release/${BOOST_VERSION}/source/${BOOST_PACKAGE_BASENAME}.tar.gz" || true
+      # try to use the backup boost we have in Jenkins
+      if [[ ! -f "${BOOST_PACKAGE_BASENAME}.tar.gz" ]] ; then
+        log "Using boost backup"
+        wget "https://carla-releases.s3.eu-west-3.amazonaws.com/Backup/${BOOST_PACKAGE_BASENAME}.tar.gz" || true
+      fi
+      else
+      log "Using already downloaded boost archive"
     fi
-
     log "Extracting boost for Python ${PY_VERSION}."
     tar -xzf ${BOOST_PACKAGE_BASENAME}.tar.gz
     mkdir -p ${BOOST_BASENAME}-install/include
