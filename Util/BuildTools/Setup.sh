@@ -8,7 +8,7 @@ DOC_STRING="Download and install the required libraries for carla."
 
 USAGE_STRING="Usage: $0 [--python-version=VERSION]"
 
-OPTS=`getopt -o h --long help,chrono,pytorch,python-version: -n 'parse-options' -- "$@"`
+OPTS=`getopt -o h --long help,chrono,pytorch,force-download,dont-remove,python-version: -n 'parse-options' -- "$@"`
 
 eval set -- "$OPTS"
 
@@ -16,6 +16,7 @@ PY_VERSION_LIST=3
 USE_CHRONO=false
 USE_PYTORCH=false
 FORCE_DOWNLOAD=false
+DONT_REMOVE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -27,6 +28,9 @@ while [[ $# -gt 0 ]]; do
       shift ;;
     --force-download )
       FORCE_DOWNLOAD=true;
+      shift ;;
+    --dont-remove )
+      DONT_REMOVE=true;
       shift ;;
     --pytorch )
       USE_PYTORCH=true;
@@ -47,9 +51,12 @@ done
 
 source $(dirname "$0")/Environment.sh
 
-export CC="$UE4_ROOT/Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/v17_clang-10.0.1-centos7/x86_64-unknown-linux-gnu/bin/clang"
-export CXX="$UE4_ROOT/Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/v17_clang-10.0.1-centos7/x86_64-unknown-linux-gnu/bin/clang++"
-export PATH="$UE4_ROOT/Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/v17_clang-10.0.1-centos7/x86_64-unknown-linux-gnu/bin:$PATH"
+## I just want to avoid long strings
+export CLANG_ROOT="$UE4_ROOT/Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/v17_clang-10.0.1-centos7/x86_64-unknown-linux-gnu"
+
+export CC="$CLANG_ROOT/bin/clang"
+export CXX="$CLANG_ROOT/bin/clang++"
+export PATH="$CLANG_ROOT/bin:$PATH"
 
 CXX_TAG=c10
 
@@ -85,7 +92,10 @@ for PY_VERSION in ${PY_VERSION_LIST[@]} ; do
   fi
 
   if { ${SHOULD_BUILD_BOOST} ; } ; then
-    rm -Rf ${BOOST_BASENAME}-source
+    ## I need this for my mental health
+    if [ $DONT_REMOVE == "false" ]; then
+      rm -Rf ${BOOST_BASENAME}-source
+    fi
 
     BOOST_PACKAGE_BASENAME=boost_${BOOST_VERSION//./_}
 
@@ -101,24 +111,37 @@ for PY_VERSION in ${PY_VERSION_LIST[@]} ; do
       else
       log "Using already downloaded boost archive"
     fi
-    log "Extracting boost for Python ${PY_VERSION}."
-    tar -xzf ${BOOST_PACKAGE_BASENAME}.tar.gz
-    mkdir -p ${BOOST_BASENAME}-install/include
-    mv ${BOOST_PACKAGE_BASENAME} ${BOOST_BASENAME}-source
+    
+    if [ ! -d "./${BOOST_BASENAME}-source" ] || [ $DONT_REMOVE == "false" ];then
+      log "Extracting boost for Python ${PY_VERSION}."
+      tar -xzf ${BOOST_PACKAGE_BASENAME}.tar.gz
+      mkdir -p ${BOOST_BASENAME}-install/include
+      mv ${BOOST_PACKAGE_BASENAME} ${BOOST_BASENAME}-source
+    else
+      log "Using already working directory (Not Safe for CI or Production)"
+    fi
 
     pushd ${BOOST_BASENAME}-source >/dev/null
 
-    BOOST_TOOLSET="clang-10.0"
+  ## Unmatching clang version works quite bad, maybe It's better gather the system-wide one
+  ## If It's already installed or we will get error related of mismatching glibc and libs versions
+  ## P.S.: I Already tried use LD_LIBRARY_PATH and make some patches for add manually Libraries in Boost build scripts...
+  ## I didn't have a good luck.
+    BOOST_TOOLSET="clang-10.0" ## BOOST_TOOLSET="clang-16.0.5"
     BOOST_CFLAGS="-fPIC -std=c++14 -DBOOST_ERROR_CODE_HEADER_ONLY"
 
     py3="/usr/bin/env python${PY_VERSION}"
     py3_root=`${py3} -c "import sys; print(sys.prefix)"`
     pyv=`$py3 -c "import sys;x='{v[0]}.{v[1]}'.format(v=list(sys.version_info[:2]));sys.stdout.write(x)";`
-    ./bootstrap.sh \
-        --with-toolset=clang \
-        --prefix=../boost-install \
-        --with-libraries=python,filesystem,system,program_options \
-        --with-python=${py3} --with-python-root=${py3_root}
+
+    ## avoid rerun this script If b2 tool already exists.
+    if [ ! -d "./bin.v2" ];then
+      ./bootstrap.sh \
+          --with-toolset=clang \
+          --prefix=../boost-install \
+          --with-libraries=python,filesystem,system,program_options \
+          --with-python=${py3} --with-python-root=${py3_root}
+    fi
 
     if ${TRAVIS} ; then
       echo "using python : ${pyv} : ${py3_root}/bin/python${PY_VERSION} ;" > ${HOME}/user-config.jam
@@ -131,8 +154,10 @@ for PY_VERSION in ${PY_VERSION_LIST[@]} ; do
 
     popd >/dev/null
 
-    rm -Rf ${BOOST_BASENAME}-source
-    rm ${BOOST_PACKAGE_BASENAME}.tar.gz
+  if [ $DONT_REMOVE == "false" ];then
+      rm -Rf ${BOOST_BASENAME}-source
+      rm ${BOOST_PACKAGE_BASENAME}.tar.gz
+  fi
 
     # Install boost dependencies
     mkdir -p "${LIBCARLA_INSTALL_CLIENT_FOLDER}/include/system"
